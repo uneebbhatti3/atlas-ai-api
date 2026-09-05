@@ -40,16 +40,9 @@ async function bootstrap() {
       crossOriginEmbedderPolicy: false,
       contentSecurityPolicy: {
         directives: {
-          imgSrc: [
-            `'self'`,
-            'data:',
-            'apollo-server-landing-page.cdn.apollographql.com',
-          ],
+          imgSrc: [`'self'`, 'data:', 'apollo-server-landing-page.cdn.apollographql.com'],
           scriptSrc: [`'self'`],
-          manifestSrc: [
-            `'self'`,
-            'apollo-server-landing-page.cdn.apollographql.com',
-          ],
+          manifestSrc: [`'self'`, 'apollo-server-landing-page.cdn.apollographql.com'],
           frameSrc: [`'self'`, 'sandbox.embed.apollographql.com'],
         },
       },
