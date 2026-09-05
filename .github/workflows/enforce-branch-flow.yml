@@ -1,0 +1,24 @@
+name: Enforce Branch Flow
+
+# Hard rule: main only ever accepts a PR from integration.
+# feature/* branches (or any other branch) opening a PR into main
+# fails this check immediately. Set "check-source-branch" as a
+# required status check on main — see CI_CD_SETUP.md.
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  check-source-branch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify PR into main comes only from integration
+        run: |
+          if [ "${{ github.head_ref }}" != "integration" ]; then
+            echo "❌ Pull requests into 'main' are only allowed from 'integration'."
+            echo "This PR is from '${{ github.head_ref }}'. Merge into 'integration' first, verify the preview deployment, then open a PR from integration into main."
+            exit 1
+          fi
+          echo "✅ Source branch is 'integration' — allowed."

@@ -1,0 +1,37 @@
+name: CI
+
+# Runs on every PR targeting integration or main.
+# Set "quality-checks" as a required status check on both branches
+# in GitHub branch protection settings — see CI_CD_SETUP.md.
+
+on:
+  pull_request:
+    branches:
+      - integration
+      - main
+
+jobs:
+  quality-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Run tests
+        run: npm run test
+
+      - name: Build
+        run: npm run build
