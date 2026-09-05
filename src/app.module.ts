@@ -35,9 +35,7 @@ import { APP_GUARD } from '@nestjs/core';
         CSRF_SECRET: z.string().min(1, 'CSRF_SECRET is required'),
         COOKIE_SECRET: z.string().min(1, 'COOKIE_SECRET is required'),
         FRONTEND_URL: z.string().url('FRONTEND_URL must be a valid URI'),
-        NODE_ENV: z
-          .enum(['development', 'production', 'test'])
-          .default('development'),
+        NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
       }),
     }),
   ],
