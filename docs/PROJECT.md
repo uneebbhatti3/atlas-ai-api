@@ -57,7 +57,7 @@ src/
     auth.service.spec.ts
   workspace/   project/   document/   # same shape
   prisma/
-    prisma.service.ts    # extends PrismaClient, manages connection lifecycle
+    prisma.service.ts    # extends PrismaClient with a required driver adapter (Prisma 7)
     prisma.module.ts      # @Global() — exported once, injectable everywhere
   common/
     guards/          # e.g. base JwtAuthGuard applied globally
@@ -102,26 +102,101 @@ export class AuthModule {}
 
 ## 6. Reference Implementation — Auth Feature
 
-**`dto/login.dto.ts`**
+**`dto/login.dto.ts`** — **using zod, not class-validator** (see note below)
 
 ```typescript
 /**
  * @file login.dto.ts
- * @description Request contract for POST /auth/login. Validated automatically by
- * the global ValidationPipe (class-validator) before reaching the controller.
+ * @description Request contract for POST /auth/login. Validated by ZodValidationPipe
+ * before reaching the controller.
  */
-import { IsEmail, MinLength } from 'class-validator';
+import { z } from 'zod';
 
-export class LoginDto {
-  @IsEmail()
-  email: string;
+export const loginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8),
+});
 
-  @MinLength(8)
-  password: string;
+export type LoginDto = z.infer<typeof loginSchema>;
+```
+
+**`common/pipes/zod-validation.pipe.ts`**
+
+```typescript
+/**
+ * @file zod-validation.pipe.ts
+ * @description Generic zod-validation pipe. Applied per-route via @UsePipes(new
+ * ZodValidationPipe(schema)) — the Nest equivalent of the global class-validator
+ * ValidationPipe, but backed by zod schemas instead.
+ */
+import { PipeTransform, Injectable, BadRequestException } from '@nestjs/common';
+import { ZodSchema } from 'zod';
+
+@Injectable()
+export class ZodValidationPipe implements PipeTransform {
+  constructor(private readonly schema: ZodSchema) {}
+
+  transform(value: unknown) {
+    const result = this.schema.safeParse(value);
+    if (!result.success) {
+      throw new BadRequestException(result.error.issues);
+    }
+    return result.data;
+  }
 }
 ```
 
-**`auth.repository.ts`**
+> **Correction from an earlier version of this doc:** this section originally used `class-validator` decorators, on the assumption that it's "idiomatic Nest." Your actual `package.json` has `zod` but no `class-validator`/`class-transformer` — so this was never actually your intent, and the earlier example wouldn't have compiled. Fixed here: zod schemas + a small custom `ZodValidationPipe`, applied per-route with `@UsePipes(new ZodValidationPipe(loginSchema))` on the controller method. This is arguably a better fit for this project anyway — writing your own validation pipe instead of trusting a framework-provided one is more in line with the "understand the mechanism, don't just trust the decorator" learning goal stated from the start.
+
+**`prisma/prisma.service.ts`** — **Prisma 7 requires a driver adapter** (see note below)
+
+```typescript
+/**
+ * @file prisma.service.ts
+ * @description Nest-managed PrismaClient lifecycle. Prisma 7 removed the bundled
+ * Rust engine — PrismaClient now must be constructed with a driver adapter
+ * (or an Accelerate URL). This project uses @prisma/adapter-pg over the raw `pg` driver.
+ */
+import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+
+@Injectable()
+export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+  constructor() {
+    super({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
+  }
+
+  async onModuleInit() {
+    await this.$connect();
+  }
+
+  async onModuleDestroy() {
+    await this.$disconnect();
+  }
+}
+```
+
+**`prisma/prisma.module.ts`**
+
+```typescript
+/**
+ * @file prisma.module.ts
+ * @description Global module — PrismaService is injectable everywhere without
+ * every feature module needing to import PrismaModule explicitly.
+ */
+import { Global, Module } from '@nestjs/common';
+import { PrismaService } from './prisma.service';
+
+@Global()
+@Module({
+  providers: [PrismaService],
+  exports: [PrismaService],
+})
+export class PrismaModule {}
+```
+
+> **Note on Prisma 7:** this is a genuinely new requirement, not a stylistic choice — v7 dropped the Rust query engine entirely, and `PrismaClient` now throws if constructed without an adapter or an Accelerate URL. Two things worth double-checking against your actual setup, since they depend on your exact `schema.prisma` config: (1) the generator provider should be `prisma-client` (not the old `prisma-client-js`) in v7; (2) v7 can generate client output to a custom path instead of `node_modules/@prisma/client` — if your `import { User } from '@prisma/client'` in `auth.repository.ts` doesn't resolve, check your schema's generator `output` path and adjust the import accordingly.
 
 ```typescript
 /**
@@ -195,11 +270,12 @@ export class AuthService {
  * @file auth.controller.ts
  * @description HTTP layer for auth endpoints. No business logic, no Prisma access.
  */
-import { Body, Controller, Post, Req, Res } from '@nestjs/common';
+import { Body, Controller, Post, Req, Res, UsePipes } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { Public } from '../common/decorators/public.decorator';
+import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { AuthService } from './auth.service';
-import { LoginDto } from './dto/login.dto';
+import { LoginDto, loginSchema } from './dto/login.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -207,6 +283,7 @@ export class AuthController {
 
   @Public()
   @Post('login')
+  @UsePipes(new ZodValidationPipe(loginSchema))
   async login(
     @Body() dto: LoginDto,
     @Req() req: Request,
@@ -349,9 +426,12 @@ export class InvalidCredentialsException extends HttpException {
 ```typescript
 /**
  * @file main.ts
- * @description Application bootstrap — global pipes, filters, interceptors, CORS.
+ * @description Application bootstrap — security middleware, global pipes/filters/
+ * interceptors, CORS.
  */
 ```
+
+> **CSRF note:** `csrf-csrf` is in your dependencies but not wired up above — it needs to be, specifically because the web client's refresh token rides in an `HttpOnly` cookie (§2). Any endpoint that trusts a cookie automatically is a CSRF target: a malicious site can make a browser send that cookie without the user's intent. `csrf-csrf` implements the double-submit cookie pattern to close that gap. This only matters for cookie-authenticated (web) requests — mobile's Bearer-token-only flow isn't exposed to CSRF the same way, since there's no ambient cookie a malicious page could ride on. Wire this into Phase 2 alongside the rest of the auth work, not deferred to later — it's a real gap in the auth flow as currently drafted, not a nice-to-have.
 
 ---
 
@@ -365,11 +445,11 @@ export class InvalidCredentialsException extends HttpException {
 6. **No direct Prisma access outside a feature's `.repository.ts`.**
 7. **No cross-feature imports** except another feature's `.service.ts`.
 8. **No business logic in controllers.** Controllers translate HTTP ↔ service calls only.
-9. **All input validated via class-validator DTOs** — the global `ValidationPipe` enforces this; never manually parse `req.body`.
+9. **All input validated via zod schemas + `ZodValidationPipe`** (§6) — never manually parse `req.body`. (Not class-validator — see the note in §6.)
 10. **Throw typed exceptions** extending `HttpException` (`common/exceptions/`), never raw strings or generic `Error`.
 11. **No magic strings/numbers** — named constants or enums.
 12. **No `console.log`** — use Nest's built-in `Logger` class.
-13. **Env validated at startup** via `ConfigModule` (fail-fast) — never read `process.env.X` ad hoc.
+13. **Env validated at startup** via `ConfigModule.forRoot({ validationSchema: ... })` using **Joi** (fail-fast) — never read `process.env.X` ad hoc. Joi validates environment/config specifically; zod validates request DTOs (§6). Two different libraries for two different boundaries, not redundant — don't consolidate onto one for its own sake.
 14. **Response envelope only via the global interceptor** — never shaped manually per controller.
 15. **Document thrown exceptions** with `@throws` in TSDoc.
 16. **No hardcoded secrets** — always via `ConfigService`.
@@ -377,7 +457,19 @@ export class InvalidCredentialsException extends HttpException {
 
 ---
 
-## 8. Testing
+## 8. Security Middleware
+
+Three packages beyond the core stack, all registered in `main.ts` (§6):
+
+| Package         | Purpose                                                                                                                                                                      |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `helmet`        | Sets secure HTTP headers (CSP, HSTS, etc.) — standard, low-effort hardening                                                                                                  |
+| `cookie-parser` | Required to read `req.cookies` — needed the moment the web client's refresh-token cookie has to be read back (e.g. the `/auth/refresh` endpoint checking a web request)      |
+| `csrf-csrf`     | Double-submit CSRF protection — needed specifically because the web refresh flow relies on an ambient `HttpOnly` cookie (§6 note). Not needed for mobile's Bearer-only flow. |
+
+---
+
+## 9. Testing
 
 Jest (Nest's default — `@nestjs/testing`'s `Test.createTestingModule` and e2e helpers are built around it).
 
@@ -387,7 +479,7 @@ Jest (Nest's default — `@nestjs/testing`'s `Test.createTestingModule` and e2e 
 
 ---
 
-## 9. Roadmap
+## 10. Roadmap
 
 | Phase | Focus                                                            |
 | ----- | ---------------------------------------------------------------- |
@@ -403,7 +495,9 @@ Jest (Nest's default — `@nestjs/testing`'s `Test.createTestingModule` and e2e 
 
 ---
 
-## 10. Open Decisions
+## 11. Open Decisions
 
 - [ ] `X-Client` header exact contract (name/values) for mobile vs. web cookie logic
 - [ ] Logging library beyond Nest's built-in `Logger` (candidates: pino via `nestjs-pino`)
+- [ ] `csrf-csrf` wiring — needs to land alongside Phase 2 auth work, not deferred (§8)
+- [ ] Confirm hosting target — `@nestjs/mau` is in devDependencies; if that's the intended deploy path, it changes the Docker/GHCR redeploy discussion from earlier (Mau likely handles its own build+deploy pipeline rather than needing a manually-pulled image)

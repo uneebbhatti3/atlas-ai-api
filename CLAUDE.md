@@ -43,7 +43,7 @@ Act as a senior NestJS backend architect and mentor. This backend serves two rea
 
 - **Structure:** `src/<feature>/` = `.controller.ts`, `.service.ts`, `.repository.ts`, `.module.ts`, `dto/`, feature-specific `guards/` if needed. Cross-cutting code in `src/common/` (`guards/`, `interceptors/`, `filters/`, `decorators/`, `exceptions/`, `config/`) and `src/prisma/`.
 - **DI:** constructor injection, resolved automatically by Nest — never manually instantiate a provider with `new`.
-- **DTOs:** class-validator decorators (`@IsEmail()`, `@MinLength()`, etc.), validated by the global `ValidationPipe`.
+- **DTOs:** zod schemas, validated per-route via `ZodValidationPipe` (`@UsePipes(new ZodValidationPipe(schema))`) — not class-validator. This project has no `class-validator`/`class-transformer` dependency; don't introduce decorator-based DTOs.
 - **Exceptions:** extend `HttpException` (or a shared custom base), live in `common/exceptions/` or the feature folder.
 - **Response shape:** never manual — the global `ResponseInterceptor` handles the envelope.
 - **New feature checklist:** scaffold the full shape (`.controller/.service/.repository/.module/dto`) even if some files start thin.
