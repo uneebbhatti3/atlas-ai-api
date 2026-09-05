@@ -1,13 +1,17 @@
 name: Build and Push Docker Image
 
-# Runs after every merge to main (i.e. after enforce-branch-flow.yml has
-# already confirmed the PR came from integration, and ci.yml has already
-# passed). Pushes to GitHub Container Registry.
+# Runs on push to main OR integration. Tags the image per-environment
+# (:latest for production, :integration for staging), then explicitly
+# triggers a Render redeploy via Deploy Hook — Render doesn't watch
+# image tags automatically the way it watches a git branch, so this
+# is the deterministic link between "new image pushed" and "actually
+# running."
 
 on:
   push:
     branches:
       - main
+      - integration
 
 permissions:
   contents: read
@@ -30,11 +34,28 @@ jobs:
         id: vars
         run: echo "sha_short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
+      - name: Determine environment tag
+        id: tag
+        run: |
+          if [ "${{ github.ref_name }}" == "main" ]; then
+            echo "env_tag=latest" >> "$GITHUB_OUTPUT"
+          else
+            echo "env_tag=integration" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ steps.vars.outputs.sha_short }}
+            ghcr.io/${{ github.repository }}:${{ steps.tag.outputs.env_tag }}
+            ghcr.io/${{ github.repository }}:${{ steps.tag.outputs.env_tag }}-${{ steps.vars.outputs.sha_short }}
+
+      - name: Trigger Render redeploy
+        run: |
+          if [ "${{ github.ref_name }}" == "main" ]; then
+            curl -fsS -X POST "${{ secrets.RENDER_DEPLOY_HOOK_PRODUCTION }}"
+          else
+            curl -fsS -X POST "${{ secrets.RENDER_DEPLOY_HOOK_STAGING }}"
+          fi
