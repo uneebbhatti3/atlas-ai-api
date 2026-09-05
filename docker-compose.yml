@@ -1,27 +1,33 @@
+version: '3.9'
 name: atlas-ai-api
 
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: atlas-ai-postgres
     restart: unless-stopped
-
     environment:
-      POSTGRES_DB: atlas_ai_db
       POSTGRES_USER: atlas_ai_user
       POSTGRES_PASSWORD: atlas_ai_password
-
+      POSTGRES_DB: atlas_ai_db
     ports:
       - '5433:5432'
-
     volumes:
       - atlas_ai_postgres_data:/var/lib/postgresql/data
 
-    healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U atlas_ai_user -d atlas_ai_db']
-      interval: 10s
-      timeout: 5s
-      retries: 10
+  api:
+    build: .
+    restart: unless-stopped
+    ports:
+      - '8000:8000'
+    env_file:
+      - .env
+    environment:
+      # Overrides .env's DATABASE_URL — inside Docker's network the API must
+      # reach Postgres by service name ("postgres"), not "localhost".
+      DATABASE_URL: postgresql://atlas_ai_user:atlas_ai_password@postgres:5432/atlas_ai_db
+      PORT: 8000
+    depends_on:
+      - postgres
 
 volumes:
   atlas_ai_postgres_data:

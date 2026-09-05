@@ -1,22 +1,21 @@
 # Atlas AI — Backend API (`atlas-ai-api`)
 
-Backend API for **Atlas AI** — a document organization and AI-search platform. This service is the single backend powering **both the Atlas AI mobile app (Flutter)** and the **Atlas AI web app (Next.js)**. Both clients consume the same REST API; there is no separate backend-for-frontend per platform.
+Backend API for **Atlas AI** — a document organization and AI-search platform. Built with **NestJS**. This service is the single backend powering **both the Atlas AI mobile app (Flutter)** and the **Atlas AI web app (Next.js)**.
 
-See [`PROJECT.md`](./PROJECT.md) for full architecture, folder structure, and coding standards. See [`CLAUDE.md`](./CLAUDE.md) for how AI coding assistants should operate in this repo.
+See [`docs/PROJECT.md`](./docs/PROJECT.md) for full architecture, module structure, and coding standards. See [`CLAUDE.md`](./CLAUDE.md) for how AI coding assistants should operate in this repo.
 
 ---
 
 ## Tech Stack
 
-| Layer      | Technology                                            |
-| ---------- | ----------------------------------------------------- |
-| Runtime    | Node.js + TypeScript (strict mode)                    |
-| Framework  | Express.js                                            |
-| ORM        | Prisma                                                |
-| Database   | PostgreSQL (Docker, local dev)                        |
-| Validation | zod                                                   |
-| Auth       | Argon2 (hashing) + JWT (access/refresh, custom-built) |
-| Logging    | Shared structured logger (no `console.log`)           |
+| Layer      | Technology                                                                 |
+| ---------- | -------------------------------------------------------------------------- |
+| Framework  | NestJS (TypeScript, strict mode)                                           |
+| ORM        | Prisma                                                                     |
+| Database   | PostgreSQL (Docker, local dev)                                             |
+| Validation | class-validator + class-transformer (Nest `ValidationPipe`)                |
+| Auth       | Argon2 (hashing) + JWT (access/refresh, hand-rolled Guards — not Passport) |
+| Testing    | Jest (Nest's default)                                                      |
 
 ---
 
@@ -27,39 +26,25 @@ See [`PROJECT.md`](./PROJECT.md) for full architecture, folder structure, and co
 | Mobile app (Flutter) | `atlas-ai-mobile` | Bearer access token + refresh token in secure device storage |
 | Web app (Next.js)    | `atlas-ai-web`    | Bearer access token + refresh token via HTTP-only cookie     |
 
-Both clients hit the same versioned endpoints (`/api/v1/...`) and receive the same response envelope. See `PROJECT.md` § Multi-Client Architecture for how auth differs safely between the two without duplicating backend logic.
-
 ---
 
 ## Prerequisites
 
 - Node.js (LTS)
 - Docker + Docker Compose
-- npm
+- `@nestjs/cli` (`npm i -g @nestjs/cli`, optional but useful for `nest generate`)
 
 ---
 
 ## Setup
 
 ```bash
-# 1. Clone
 git clone <repo-url> atlas-ai-api
 cd atlas-ai-api
-
-# 2. Install dependencies
 npm install
-
-# 3. Copy environment variables
 cp .env.example .env
-# fill in required values — see "Environment Variables" below
-
-# 4. Start PostgreSQL in Docker
 docker compose up -d postgres
-
-# 5. Run Prisma migrations
 npx prisma migrate dev
-
-# 6. Start the dev server
 npm run start:dev
 ```
 
@@ -80,7 +65,7 @@ API available at `http://localhost:<PORT>` (see `.env`).
 | `FRONTEND_URL`       | Allowed CORS origin for the web app          |
 | `NODE_ENV`           | `development` \| `test` \| `production`      |
 
-All environment variables are validated at startup (fail-fast) — the server refuses to boot if required variables are missing or malformed. See `PROJECT.md` § Configuration.
+Validated at startup via Nest's `ConfigModule` — the app refuses to boot on missing/malformed config.
 
 ---
 
@@ -88,37 +73,39 @@ All environment variables are validated at startup (fail-fast) — the server re
 
 ```
 src/
-    auth/
-      auth.controller.ts
-      auth.service.ts
-      auth.module.ts
-      auth.repository.ts
-      dto/
-      guards/
-      types/
-  shared/            # Cross-cutting: guards, interceptors, middleware, errors, config
+    <feature>.controller.ts
+    <feature>.service.ts
+    <feature>.repository.ts
+    <feature>.module.ts
+    dto/
+  prisma/
+    prisma.service.ts
+    prisma.module.ts
+  common/
+    guards/  interceptors/  filters/  decorators/  exceptions/  config/
+  app.module.ts
+  main.ts
 prisma/
   schema.prisma
 ```
 
-Full explanation of every file's responsibility, the dependency-injection pattern, and cross-feature import rules: see `PROJECT.md`.
+Full detail: `docs/PROJECT.md`.
 
 ---
 
 ## Scripts
 
 ```bash
-npm run start:dev            # Start dev server with hot reload
-npm run build           # Compile TypeScript
-npm run start             # Run compiled build
-npm run prisma:studio     # Open Prisma Studio
-npm run test               # Run test suite
-npm run lint                # Lint
-npm run typecheck            # Type-check without emitting
+npm run start:dev     # Dev server, watch mode
+npm run build          # nest build (prisma generate runs first via postinstall + build)
+npm run start:prod       # Run compiled build (dist/main.js)
+npm run test               # Unit tests (Jest)
+npm run test:e2e             # End-to-end tests
+npm run lint                  # Lint
 ```
 
 ---
 
 ## Status
 
-Currently in **Phase 1 — Foundation**. See `PROJECT.md` § Roadmap for the full phase plan.
+Currently in **Phase 1 — Foundation**. See `docs/PROJECT.md` § Roadmap.
