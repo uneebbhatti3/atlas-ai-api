@@ -6,6 +6,7 @@ import { ConfigModule } from '@nestjs/config';
 import { PrismaService } from './prisma/prisma.service';
 import { z } from 'zod';
 import { APP_GUARD } from '@nestjs/core';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { APP_GUARD } from '@nestjs/core';
         NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
       }),
     }),
+    HealthModule,
   ],
   controllers: [AppController],
   providers: [

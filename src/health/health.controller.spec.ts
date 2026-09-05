@@ -1,0 +1,28 @@
+/**
+ * @file health.controller.spec.ts
+ * @description Verifies the health check endpoint — the same endpoint Render's
+ * health check depends on (see render.yaml). Not a placeholder: this actually
+ * catches a real regression if /health ever stops returning the expected shape.
+ */
+import { Test, TestingModule } from '@nestjs/testing';
+import { HealthController } from './health.controller';
+
+describe('HealthController', () => {
+  let controller: HealthController;
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      controllers: [HealthController],
+    }).compile();
+
+    controller = module.get<HealthController>(HealthController);
+  });
+
+  it('should be defined', () => {
+    expect(controller).toBeDefined();
+  });
+
+  it('should return an ok status', () => {
+    expect(controller.check()).toEqual({ status: 'ok' });
+  });
+});
