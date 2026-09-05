@@ -1,0 +1,48 @@
+# Dependencies
+node_modules
+
+# Build output
+dist
+build
+
+# Generated files (rebuilt inside container via prisma generate)
+src/generated/prisma
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Test coverage
+coverage
+.nyc_output
+
+# Environment files
+.env
+.env.*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDEs and editors
+.vscode
+.idea
+*.sublime-workspace
+
+# Git
+.git
+.gitignore
+
+# Docker
+.dockerignore
+docker-compose*.yml
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Temp
+.temp
+.tmp
